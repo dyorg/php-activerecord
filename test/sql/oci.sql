@@ -2,7 +2,6 @@ CREATE SEQUENCE authors_seq;
 CREATE TABLE authors(
 	author_id INT NOT NULL PRIMARY KEY,
 	parent_author_id INT,
-	publisher_id INT,
 	name VARCHAR(25) DEFAULT 'default_name' NOT NULL,
 	updated_at timestamp,
 	created_at timestamp,
@@ -22,12 +21,6 @@ CREATE TABLE books(
 	numeric_test VARCHAR(10) DEFAULT '0',
 	special NUMERIC(10,2) DEFAULT 0);
 
-CREATE SEQUENCE publishers_seq;
-CREATE TABLE publishers(
-	publisher_id INT NOT NULL PRIMARY KEY,
-	name VARCHAR(25) DEFAULT 'default_name' NOT NULL,
-);
-
 CREATE SEQUENCE venues_seq;
 CREATE TABLE venues (
   Id INT NOT NULL PRIMARY KEY,
@@ -42,7 +35,7 @@ CREATE TABLE venues (
 CREATE SEQUENCE events_seq;
 CREATE TABLE events (
   id INT NOT NULL PRIMARY KEY,
-  venue_id int NULL,
+  venue_id int NOT NULL,
   host_id int NOT NULL,
   title varchar(60) NOT NULL,
   description varchar(10),

@@ -34,21 +34,16 @@ class Table
 	 * Name of the database (optional)
 	 */
 	public $db_name;
+	
+	/**
+	 * Name of the schema, used with postgresql (optional)
+	 */
+	public $schema_name;
 
 	/**
 	 * Name of the sequence for this table (optional). Defaults to {$table}_seq
 	 */
 	public $sequence;
-
-	/**
-	 * Whether to cache individual models or not (not to be confused with caching of table schemas).
-	 */
-	public $cache_individual_model;
-
-	/**
-	 * Expiration period for model caching.
-	 */
-	public $cache_model_expire;
 
 	/**
 	 * A instance of CallBack for this model/table
@@ -83,17 +78,23 @@ class Table
 			self::$cache = array();
 	}
 
+	public static function reestablish_connection_all() 
+	{
+		foreach (self::$cache as $table) {
+			$table->reestablish_connection(false);
+		}
+	}
+	
 	public function __construct($class_name)
 	{
 		$this->class = Reflections::instance()->add($class_name)->get($class_name);
-
+		
 		$this->reestablish_connection(false);
 		$this->set_table_name();
 		$this->get_meta_data();
 		$this->set_primary_key();
 		$this->set_sequence_name();
 		$this->set_delegates();
-		$this->set_cache();
 		$this->set_setters_and_getters();
 
 		$this->callback = new CallBack($class_name);
@@ -105,13 +106,13 @@ class Table
 	{
 		// if connection name property is null the connection manager will use the default connection
 		$connection = $this->class->getStaticPropertyValue('connection',null);
-
+		
 		if ($close)
 		{
 			ConnectionManager::drop_connection($connection);
 			static::clear_cache();
 		}
-		return ($this->conn = ConnectionManager::get_connection($connection));
+		 ($this->conn = ConnectionManager::get_connection($connection));
 	}
 
 	public function create_joins($joins)
@@ -119,6 +120,7 @@ class Table
 		if (!is_array($joins))
 			return $joins;
 
+		$self = $this->table;
 		$ret = $space = '';
 
 		$existing_tables = array();
@@ -219,39 +221,19 @@ class Table
 		return $this->find_by_sql($sql->to_s(),$sql->get_where_values(), $readonly, $eager_load);
 	}
 
-	public function cache_key_for_model($pk)
-	{
-		if (is_array($pk))
-		{
-			$pk = implode('-', $pk);
-		}
-		return $this->class->name . '-' . $pk;
-	}
-
 	public function find_by_sql($sql, $values=null, $readonly=false, $includes=null)
 	{
 		$this->last_sql = $sql;
 
-		$collect_attrs_for_includes = is_null($includes) ? false : true;
-		$list = $attrs = array();
+		$collect_attrs_for_includes = is_null($includes) ? false : true;		
+		$attrs = array();
+		$list = ModelCollection::$enabled_wrap_models_collection ? new ModelCollection(array()) : array();
+		
 		$sth = $this->conn->query($sql,$this->process_data($values));
 
-		$self = $this;
 		while (($row = $sth->fetch()))
 		{
-			$cb = function() use ($row, $self)
-			{
-				return new $self->class->name($row, false, true, false);
-			};
-			if ($this->cache_individual_model)
-			{
-				$key = $this->cache_key_for_model(array_intersect_key($row, array_flip($this->pk)));
-				$model = Cache::get($key, $cb, $this->cache_model_expire);
-			}
-			else
-			{
-				$model = $cb();
-			}
+			$model = new $this->class->name($row,false,true,false);
 
 			if ($readonly)
 				$model->readonly();
@@ -262,9 +244,14 @@ class Table
 			$list[] = $model;
 		}
 
-		if ($collect_attrs_for_includes && !empty($list))
-			$this->execute_eager_load($list, $attrs, $includes);
-
+		if ($collect_attrs_for_includes) {
+			if ($list instanceof ModelCollection) {
+				if (!$list->is_empty()) $this->execute_eager_load($list, $attrs, $includes);
+			} else {
+				if (!empty($list)) $this->execute_eager_load($list, $attrs, $includes);
+			}
+		}
+		
 		return $list;
 	}
 
@@ -286,7 +273,7 @@ class Table
 			// nested include
 			if (is_array($name))
 			{
-				$nested_includes = count($name) > 0 ? $name : array();
+				$nested_includes = count($name) > 0 ? $name : $name[0];
 				$name = $index;
 			}
 			else
@@ -310,10 +297,21 @@ class Table
 	public function get_fully_qualified_table_name($quote_name=true)
 	{
 		$table = $quote_name ? $this->conn->quote_name($this->table) : $this->table;
-
-		if ($this->db_name)
-			$table = $this->conn->quote_name($this->db_name) . ".$table";
-
+		
+		if ($this->conn instanceof PgsqlAdapter)
+		{
+			if ($this->schema_name)
+				$table = ($quote_name ? $this->conn->quote_name($this->schema_name) : $this->schema_name) . ".$table";
+			elseif ($this->conn->schema)
+				$table = ($quote_name ? $this->conn->quote_name($this->conn->schema) : $this->conn->schema) . ".$table";
+			else
+				$table = ($quote_name ? $this->conn->quote_name('public') : 'public') . ".$table";
+		}
+		else
+		{
+			if ($this->db_name)
+				$table = ($quote_name ? $this->conn->quote_name($this->db_name) : $this->db_name) . ".$table";
+		}
 		return $table;
 	}
 
@@ -324,7 +322,7 @@ class Table
 	 * @param $name string name of Relationship
 	 * @param $strict bool
 	 * @throws RelationshipException
-	 * @return HasOne|HasMany|BelongsTo Relationship or null
+	 * @return Relationship or null
 	 */
 	public function get_relationship($name, $strict=false)
 	{
@@ -356,6 +354,7 @@ class Table
 		$sql->insert($data,$pk,$sequence_name);
 
 		$values = array_values($data);
+
 		return $this->conn->query(($this->last_sql = $sql->to_s()),$values);
 	}
 
@@ -396,7 +395,7 @@ class Table
 		// as more adapters are added probably want to do this a better way
 		// than using instanceof but gud enuff for now
 		$quote_name = !($this->conn instanceof PgsqlAdapter);
-
+		
 		$table_name = $this->get_fully_qualified_table_name($quote_name);
 		$conn = $this->conn;
 		$this->columns = Cache::get("get_meta_data-$table_name", function() use ($conn, $table_name) { return $conn->columns($table_name); });
@@ -428,10 +427,9 @@ class Table
 		if (!$hash)
 			return $hash;
 
-		$date_class = Config::instance()->get_date_class();
 		foreach ($hash as $name => &$value)
 		{
-			if ($value instanceof $date_class || $value instanceof \DateTime)
+			if ($value instanceof \DateTime)
 			{
 				if (isset($this->columns[$name]) && $this->columns[$name]->type == Column::DATE)
 					$hash[$name] = $this->conn->date_to_string($value);
@@ -474,24 +472,12 @@ class Table
 			$this->table = $parts[count($parts)-1];
 		}
 
-		if (($db = $this->class->getStaticPropertyValue('db',null)) || ($db = $this->class->getStaticPropertyValue('db_name',null)))
-			$this->db_name = $db;
-	}
-
-	private function set_cache()
-	{
-		if (!Cache::$adapter)
-			return;
-
-		$model_class_name = $this->class->name;
-		$this->cache_individual_model = $model_class_name::$cache;
-		if (property_exists($model_class_name, 'cache_expire') && isset($model_class_name::$cache_expire))
-		{
-			$this->cache_model_expire =  $model_class_name::$cache_expire;
-		}
-		else
-		{
-			$this->cache_model_expire = Cache::$options['expire'];
+		if ($this->conn instanceof PgsqlAdapter) {
+			if(($db = $this->class->getStaticPropertyValue('schema',null)) || ($db = $this->class->getStaticPropertyValue('schema_name',null)))
+				$this->schema_name = $db;
+		} else {	
+			if(($db = $this->class->getStaticPropertyValue('db',null)) || ($db = $this->class->getStaticPropertyValue('db_name',null)))
+				$this->db_name = $db;
 		}
 	}
 
@@ -501,12 +487,16 @@ class Table
 			return;
 
 		if (!($this->sequence = $this->class->getStaticPropertyValue('sequence')))
-			$this->sequence = $this->conn->get_sequence_name($this->table,$this->pk[0]);
+		{
+			$pk0 = isset($this->pk[0]) ? $this->pk[0] : null;
+			$this->sequence = $this->conn->get_sequence_name($this->table, $pk0);
+			//$this->sequence = $this->conn->get_sequence_name($this->table, $this->pk[0]);
+		}
 	}
 
 	private function set_associations()
 	{
-		require_once __DIR__ . '/Relationship.php';
+		require_once 'Relationship.php';
 		$namespace = $this->class->getNamespaceName();
 
 		foreach ($this->class->getStaticProperties() as $name => $definitions)
@@ -517,7 +507,7 @@ class Table
 			foreach (wrap_strings_in_arrays($definitions) as $definition)
 			{
 				$relationship = null;
-				$definition += array('namespace' => $namespace);
+				$definition += compact('namespace');
 
 				switch ($name)
 				{
@@ -601,4 +591,5 @@ class Table
 			trigger_error('static::$getters and static::$setters are deprecated. Please define your setters and getters by declaring methods in your model prefixed with get_ or set_. See
 			http://www.phpactiverecord.org/projects/main/wiki/Utilities#attribute-setters and http://www.phpactiverecord.org/projects/main/wiki/Utilities#attribute-getters on how to make use of this option.', E_USER_DEPRECATED);
 	}
-}
+};
+?>

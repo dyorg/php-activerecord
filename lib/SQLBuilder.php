@@ -11,21 +11,21 @@ namespace ActiveRecord;
  */
 class SQLBuilder
 {
-	private $connection;
-	private $operation = 'SELECT';
-	private $table;
-	private $select = '*';
-	private $joins;
-	private $order;
+	protected $connection;
+	protected $operation = 'SELECT';
+	protected $table;
+	protected $select = '*';
+	protected $joins;
+	protected $order;
 	private $limit;
 	private $offset;
-	private $group;
+	protected $group;
 	private $having;
-	private $update;
+    protected $update;
 
 	// for where
-	private $where;
-	private $where_values = array();
+	protected $where;
+	protected $where_values = array();
 
 	// for insert/update
 	private $data;
@@ -275,7 +275,7 @@ class SQLBuilder
 	 * @param array $hash
 	 * @return array $new
 	 */
-	private function prepend_table_name_to_fields($hash=array())
+	protected function prepend_table_name_to_fields($hash=array())
 	{
 		$new = array();
 		$table = $this->connection->quote_name($this->table);
@@ -420,3 +420,4 @@ class SQLBuilder
 		return $keys;
 	}
 }
+?>

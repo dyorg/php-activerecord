@@ -3,6 +3,7 @@
  * @package ActiveRecord
  */
 namespace ActiveRecord;
+use Lean\Format\Money;
 use XmlWriter;
 
 /**
@@ -173,11 +174,7 @@ abstract class Serialization
 				try {
 					$assoc = $this->model->$association;
 
-					if ($assoc === null)
-					{
-						$this->attributes[$association] = null;
-					}
-					elseif (!is_array($assoc))
+					if (!is_array($assoc))
 					{
 						$serialized = new $serializer_class($assoc, $options);
 						$this->attributes[$association] = $serialized->to_a();;
@@ -218,10 +215,9 @@ abstract class Serialization
 	 */
 	final public function to_a()
 	{
-		$date_class = Config::instance()->get_date_class();
 		foreach ($this->attributes as &$value)
 		{
-			if ($value instanceof $date_class)
+			if ($value instanceof \DateTime)
 				$value = $value->format(self::$DATETIME_FORMAT);
 		}
 		return $this->attributes;
@@ -350,7 +346,7 @@ class CsvSerializer extends Serialization
 
   public function to_s()
   {
-    if (@$this->options['only_header'] == true) return $this->header();
+    if (isset($this->options['only_header']) && $this->options['only_header'] == true) return $this->header();
     return $this->row();
   }
 
@@ -374,3 +370,199 @@ class CsvSerializer extends Serialization
     return $buffer;
   }
 }
+
+
+/**
+ * Base class for Model collection serializers.
+ *
+ * It's work with ModelCollection {@link ModelCollection}, that wraps objects Model to make mass serealization
+ * All serializers support the same options of Serialization {@link Serialization}
+ *
+ * Example usage:
+ *
+ * <code>
+ * 
+ * # populize object ModelCollection with only objects Model
+ * $list_models = new ModelCollection(array());
+ * $list_models[] = new Model();
+ * 
+ * # collection serializer has supports to array, json and csv
+ * # use all $options there are in class Serialization options  
+ * $list_models->to_array($options);
+ * $list_models->to_json($options);
+ * $list_models->to_csv($options);
+ * 
+ * </code>
+ *
+ * @package ActiveRecord
+ * @link http://www.phpactiverecord.org/guides/utilities#topic-serialization
+ */
+abstract class CollectionSerialization 
+{	
+	protected $collection;
+	protected $options;
+	
+	/**
+	 * Constructs a {@link CollectionSerialization} object.
+	 *
+	 * @param ModelCollection $collection The collection of models to serialize
+	 * @param array &$options Options for serialization
+	 * @return CollectionSerialization
+	 */
+	public function __construct(ModelCollection $collection, &$options)
+	{
+		$this->collection = $collection;
+		$this->options = $options;
+	}
+	
+	/**
+	 * Returns the models array.
+	 * @return array
+	 */
+	public function to_array() {
+	
+		$array = array();
+		
+		foreach ($this->collection as $model) {
+			$model_to_array = $model->to_array($this->options);
+
+			foreach ($model_to_array as &$attribute) {
+				if ($attribute instanceof ModelCollection) {
+					$attribute = $attribute->to_array($this->options);
+				}
+			}
+
+			$array[] = $model_to_array;
+		}
+		
+		return $array;
+	}
+	
+	/**
+	 * Performs the serialization.
+	 * @return string
+	 */
+	abstract public function to_s();
+	
+}
+
+/**
+ * Array collection serializer.
+ *
+ * @package ActiveRecord
+ */
+class ArrayCollectionSerializer extends CollectionSerialization 
+{	
+	public function to_s() 
+	{
+		return parent::to_array();
+	}
+}
+
+/**
+ * JSON collection serializer.
+ *
+ * @package ActiveRecord
+ */
+class JsonCollectionSerializer extends ArrayCollectionSerializer 
+{	
+	public function to_s()
+	{
+		ArraySerializer::$include_root = JsonSerializer::$include_root;
+		return json_encode(parent::to_s());
+	}
+}
+
+/**
+ * CSV collection serializer.
+ *
+ * CsvCollectionSerializer returns a list with headers and rows, and supports additional options to modify the result
+ *
+ * <ul>
+ * <li><b>only_headers:</b> a string or array of attributes to be included.</li>
+ * <li><b>only_rows:</b> a string or array of attributes to be excluded.</li>
+ * </ul>
+ *
+ * Example usage:
+ *
+ * <code>
+ * # return a complete list with headers and rows in csv format
+ * # use all $options supported by class Serialization
+ * # use existing CsvSerializer static attributes to modify delimiter and enclosure
+ * CsvSerializer::$delimiter = ';';
+ * CsvSerializer::$enclosure = '""';
+ *
+ * $list_models->to_csv($options)
+ *
+ * # return only headers in csv format
+ * $list_models->to_csv(array('only_header' => true)
+ *
+ * # return only rows in csv format
+ * $list_models->to_csv(array('only_rows' => true)
+ *
+ * # when regional symbol decimal is ',' instead '.' use convert_decimal option to convert
+ * # it's works only when CsvSerializer::$delimiter is diferent than ','
+ * $list_models->to_csv(array('convert_decimal' => array('money')))
+ *
+ * # rename headers to export
+ * $list_models->to_csv(array('rename_header' => array('user_name' => 'User', 'user_email' => 'E-mail')))
+ * </code>
+ * 
+ * @package ActiveRecord
+ */
+class CsvCollectionSerializer extends CollectionSerialization 
+{	
+	public function to_s()
+	{		
+		$models = parent::to_array();
+	
+		$stream = fopen('php://temp', 'w');
+
+		if (isset($models[0]) && $this->get_options('only_rows') !== true) {
+
+			$headers = array_keys($models[0]);
+
+			// rename headers
+			if ($rename_header = $this->get_options('rename_header')) {
+				foreach($headers as &$attribute) {
+					if (array_key_exists($attribute, $rename_header)) {
+						$attribute = $rename_header[$attribute];
+					}
+				}
+			}
+
+			fputcsv($stream, $headers, CsvSerializer::$delimiter, CsvSerializer::$enclosure);
+		}
+
+		if ($this->get_options('only_header') !== true) {
+
+            $filters = $this->get_options('filters');
+
+			foreach ($models as $model) {
+
+				if ($filters) {
+					foreach ($model as $name => &$value) {
+						if (array_key_exists($name, $filters)) {
+                            $value = call_user_func($filters[$name], $value);
+                        }
+					}
+				}
+
+				fputcsv($stream, $model, CsvSerializer::$delimiter, CsvSerializer::$enclosure);
+
+			}
+		}
+			
+		rewind($stream);
+		$buffer = trim(stream_get_contents($stream));
+		fclose($stream);
+		return $buffer;
+	}
+	
+	private function get_options($key) {
+		if (!isset($this->options[$key])) return null;
+		return $this->options[$key];
+	}
+}
+
+?>

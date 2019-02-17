@@ -13,7 +13,20 @@ class PgsqlAdapter extends Connection
 {
 	static $QUOTE_CHARACTER = '"';
 	static $DEFAULT_PORT = 5432;
+	
+	public $schema;
 
+	public function __construct($info)
+	{				
+		parent::__construct($info);
+		
+		if(!empty($info->schema)) 
+		{
+			$this->schema = $info->schema;
+			$this->query("SET SEARCH_PATH TO '$info->schema', 'public'");
+		}
+	}
+	
 	public function supports_sequences()
 	{
 		return true;
@@ -35,7 +48,7 @@ class PgsqlAdapter extends Connection
 	}
 
 	public function query_column_info($table)
-	{
+	{		
 		$sql = <<<SQL
 SELECT
       a.attname AS field,
@@ -53,15 +66,19 @@ SELECT
         WHERE c.oid = pg_attrdef.adrelid
         AND pg_attrdef.adnum=a.attnum
       ),'::[a-z_ ]+',''),'''$',''),'^''','') AS default
-FROM pg_attribute a, pg_class c, pg_type t
-WHERE c.relname = ?
+FROM pg_attribute a, pg_class c, pg_type t, pg_namespace n
+WHERE n.nspname = ? 
+	  AND c.relname = ?
       AND a.attnum > 0
       AND a.attrelid = c.oid
       AND a.atttypid = t.oid
+	  AND c.relnamespace = n.oid
 ORDER BY a.attnum
 SQL;
-		$values = array($table);
-		return $this->query($sql,$values);
+		
+		$info = explode('.', $table);
+		
+		return $this->query($sql, $info);
 	}
 
 	public function query_for_tables()
@@ -134,6 +151,5 @@ SQL;
 			'boolean' => array('name' => 'boolean')
 		);
 	}
-
 }
 ?>

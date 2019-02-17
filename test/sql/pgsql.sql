@@ -1,7 +1,6 @@
 CREATE TABLE authors(
 	author_id SERIAL PRIMARY KEY,
 	parent_author_id INT,
-	publisher_id INT,
 	name VARCHAR(25) NOT NULL DEFAULT 'default_name',
 	updated_at timestamp,
 	created_at timestamp,
@@ -21,11 +20,6 @@ CREATE TABLE books(
 	special NUMERIC(10,2) DEFAULT 0.0
 );
 
-CREATE TABLE publishers(
-	publisher_id SERIAL PRIMARY KEY,
-	name VARCHAR(25) NOT NULL DEFAULT 'default_name'
-);
-
 CREATE TABLE venues (
 	id SERIAL PRIMARY KEY,
 	name varchar(50),
@@ -38,7 +32,7 @@ CREATE TABLE venues (
 
 CREATE TABLE events (
 	id SERIAL PRIMARY KEY,
-	venue_id int NULL,
+	venue_id int NOT NULL,
 	host_id int NOT NULL,
 	title varchar(60) NOT NULL,
 	description varchar(10),

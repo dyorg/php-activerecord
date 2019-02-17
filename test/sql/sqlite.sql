@@ -1,7 +1,6 @@
 CREATE TABLE authors(
 	author_id INTEGER NOT NULL PRIMARY KEY,
 	parent_author_id INT,
-	publisher_id INT,
 	name VARCHAR  (25) NOT NULL DEFAULT default_name, -- don't touch those spaces
 	updated_at datetime,
 	created_at datetime,
@@ -21,11 +20,6 @@ CREATE TABLE books(
 	special NUMERIC(10,2) DEFAULT 0
 );
 
-CREATE TABLE publishers(
-	publisher_id INTEGER NOT NULL PRIMARY KEY,
-	name VARCHAR  (25) NOT NULL DEFAULT default_name -- don't touch those spaces
-);
-
 CREATE TABLE venues (
   Id INTEGER NOT NULL PRIMARY KEY,
   name varchar(50),
@@ -38,7 +32,7 @@ CREATE TABLE venues (
 
 CREATE TABLE events (
   id INTEGER NOT NULL PRIMARY KEY,
-  venue_id int NULL,
+  venue_id int NOT NULL,
   host_id int NOT NULL,
   title varchar(60) NOT NULL,
   description varchar(10),

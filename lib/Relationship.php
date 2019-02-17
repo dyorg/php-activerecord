@@ -180,35 +180,33 @@ abstract class AbstractRelationship implements InterfaceRelationship
 		$class = $this->class_name;
 
 		$related_models = $class::find('all', $options);
-		$used_models_map = array();
-		$related_models_map = array();
+		$used_models = array();
 		$model_values_key = $inflector->variablize($model_values_key);
 		$query_key = $inflector->variablize($query_key);
 
-		foreach ($related_models as $related)
-		{
-			$related_models_map[$related->$query_key][] = $related;
-		}
-
 		foreach ($models as $model)
 		{
+			$matches = 0;
 			$key_to_match = $model->$model_values_key;
 
-			if (isset($related_models_map[$key_to_match])) {
-				foreach ($related_models_map[$key_to_match] as $related)
+			foreach ($related_models as $related)
+			{
+				if ($related->$query_key == $key_to_match)
 				{
 					$hash = spl_object_hash($related);
 
-					if (isset($used_models_map[$hash]))
+					if (in_array($hash, $used_models))
 						$model->set_relationship_from_eager_load(clone($related), $this->attribute_name);
 					else
 						$model->set_relationship_from_eager_load($related, $this->attribute_name);
 
-					$used_models_map[$hash] = true;
+					$used_models[] = $hash;
+					$matches++;
 				}
-			} else {
-				$model->set_relationship_from_eager_load(null, $this->attribute_name);
 			}
+
+			if (0 === $matches)
+				$model->set_relationship_from_eager_load(null, $this->attribute_name);
 		}
 	}
 
@@ -382,7 +380,7 @@ abstract class AbstractRelationship implements InterfaceRelationship
 	 * @param Model $model The model this relationship belongs to
 	 */
 	abstract function load(Model $model);
-}
+};
 
 /**
  * One-to-many relationship.
@@ -606,7 +604,7 @@ class HasMany extends AbstractRelationship
 		$this->set_keys($table->class->name);
 		$this->query_and_attach_related_models_eagerly($table,$models,$attributes,$includes,$this->foreign_key, $table->pk);
 	}
-}
+};
 
 /**
  * One-to-one relationship.
@@ -628,7 +626,7 @@ class HasMany extends AbstractRelationship
  */
 class HasOne extends HasMany
 {
-}
+};
 
 /**
  * @todo implement me
@@ -652,7 +650,7 @@ class HasAndBelongsToMany extends AbstractRelationship
 	{
 
 	}
-}
+};
 
 /**
  * Belongs to relationship.
@@ -727,4 +725,5 @@ class BelongsTo extends AbstractRelationship
 	{
 		$this->query_and_attach_related_models_eagerly($table,$models,$attributes,$includes, $this->primary_key,$this->foreign_key);
 	}
-}
+};
+?>

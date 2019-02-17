@@ -21,17 +21,6 @@ abstract class Connection
 {
 
 	/**
-	 * The DateTime format to use when translating other DateTime-compatible objects.
-	 *
-	 * NOTE!: The DateTime "format" used must not include a time-zone (name, abbreviation, etc) or offset.
-	 * Including one will cause PHP to ignore the passed in time-zone in the 3rd argument.
-	 * See bug: https://bugs.php.net/bug.php?id=61022
-	 *
-	 * @var string
-	 */
-	const DATETIME_TRANSLATE_FORMAT = 'Y-m-d\TH:i:s';
-
-	/**
 	 * The PDO connection object.
 	 * @var mixed
 	 */
@@ -118,6 +107,7 @@ abstract class Connection
 		$info = static::parse_connection_url($connection_string);
 		$fqclass = static::load_adapter_class($info->protocol);
 
+		
 		try {
 			$connection = new $fqclass($info);
 			$connection->protocol = $info->protocol;
@@ -176,7 +166,7 @@ abstract class Connection
 	public static function parse_connection_url($connection_url)
 	{
 		$url = @parse_url($connection_url);
-
+		
 		if (!isset($url['host']))
 			throw new DatabaseException('Database host must be specified in the connection string. If you want to specify an absolute filename, use e.g. sqlite://unix(/path/to/file)');
 
@@ -231,6 +221,9 @@ abstract class Connection
 
 				if ($name == 'charset')
 					$info->charset = $value;
+				
+				if ($name == 'schema')
+					$info->schema = $value;
 			}
 		}
 
@@ -278,6 +271,7 @@ abstract class Connection
 			$c = $this->create_column($row);
 			$columns[$c->name] = $c;
 		}
+
 		return $columns;
 	}
 
@@ -480,7 +474,7 @@ abstract class Connection
 	 * Converts a string representation of a datetime into a DateTime object.
 	 *
 	 * @param string $string A datetime in the form accepted by date_create()
-	 * @return object The date_class set in Config
+	 * @return DateTime
 	 */
 	public function string_to_datetime($string)
 	{
@@ -490,13 +484,7 @@ abstract class Connection
 		if ($errors['warning_count'] > 0 || $errors['error_count'] > 0)
 			return null;
 
-		$date_class = Config::instance()->get_date_class();
-
-		return $date_class::createFromFormat(
-			static::DATETIME_TRANSLATE_FORMAT,
-			$date->format(static::DATETIME_TRANSLATE_FORMAT),
-			$date->getTimezone()
-		);
+		return new DateTime($date->format(static::$datetime_format));
 	}
 
 	/**
@@ -548,3 +536,6 @@ abstract class Connection
 	}
 
 }
+
+;
+?>
