@@ -15,19 +15,23 @@ class SQLBuilder
 	private $operation = 'SELECT';
 	private $table;
 	private $select = '*';
-	private $joins;
 	private $order;
 	private $limit;
 	private $offset;
 	private $group;
 	private $having;
+
+    // for joins
+    private $joins;
+    private $joins_values = array();
+
+    // for update
 	private $update;
+    private $update_values = array();
 
 	// for where
 	private $where;
 	private $where_values = array();
-    private $join_values = array();
-    private $update_values = array();
 
 	// for insert/update
 	private $data;
@@ -84,12 +88,17 @@ class SQLBuilder
 		if ($this->data)
 			$ret = array_values($this->data);
 
-		if ($this->get_where_values())
-			$ret = array_merge($ret,$this->get_where_values());
+		if ($this->get_param_values())
+			$ret = array_merge($ret,$this->get_param_values());
 
 		return array_flatten($ret);
 	}
 
+    /**
+     * @deprecated
+     * @see get_param_values
+     * @return array
+     */
 	public function get_where_values()
 	{
         return $this->get_param_values();
@@ -101,7 +110,7 @@ class SQLBuilder
      */
     public function get_param_values()
     {
-        return array_merge($this->join_values, $this->update_values, $this->where_values);
+        return array_merge($this->joins_values, $this->update_values, $this->where_values);
     }
 
 	public function where(/* (conditions, values) || (hash) */)
@@ -130,7 +139,7 @@ class SQLBuilder
 
 	public function having($having)
 	{
-		$this->having = $having;
+        $this->having = empty($this->having) ? $having : $this->having.', '.$having;
 		return $this;
 	}
 
@@ -150,7 +159,7 @@ class SQLBuilder
     {
         $this->operation = 'SELECT';
         $select = trim($select, ", \t\n");
-        $this->select = ($this->select == '*') ? $select : $this->select.', '.$select;
+        $this->select = ($this->select === '*') ? $select : $this->select.', '.$select;
         return $this;
     }
 
@@ -180,14 +189,14 @@ class SQLBuilder
                     $e->bind_values($values);
 
                     $this->joins = $this->joins.' '.$e->to_s();
-                    $this->join_values = array_merge($this->join_values, array_flatten($e->values()));
+                    $this->joins_values = array_merge($this->joins_values, array_flatten($e->values()));
                     return;
                 }
             }
 
             // no nested array so nothing special to do
             $this->joins = $this->joins.' '.$join;
-            $this->join_values =  array_merge($this->join_values, $values);
+            $this->joins_values =  array_merge($this->joins_values, $values);
         }
 
         return $this;
@@ -512,26 +521,3 @@ class SQLBuilder
 		return $keys;
 	}
 }
-
-function is_hash(&$array)
-{
-    if (!is_array($array))
-        return false;
-
-    $keys = array_keys($array);
-    return @is_string($keys[0]) ? true : false;
-}
-
-function array_flatten(array $array)
-{
-    $i = 0;
-
-    while ($i < count($array))
-    {
-        if (is_array($array[$i]))
-            array_splice($array,$i,1,$array[$i]);
-        else
-            ++$i;
-    }
-    return $array;
-}	
