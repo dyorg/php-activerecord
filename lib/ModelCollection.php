@@ -171,6 +171,8 @@ class ModelCollection extends \ArrayObject {
      */
     private function _serialize($type, $options)
     {
+        require_once __DIR__ . "/serialization/CollectionSerializer.php";
+        require_once __DIR__ . "/serialization/{$type}CollectionSerializer.php";
         $class = "ActiveRecord\\Serialization\\{$type}CollectionSerializer";
         $serializer = new $class($this, $options);
         return $serializer->to_s();
