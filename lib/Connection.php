@@ -231,6 +231,9 @@ abstract class Connection
 
 				if ($name == 'charset')
 					$info->charset = $value;
+
+                if ($name == 'schema')
+                    $info->schema = $value;
 			}
 		}
 
