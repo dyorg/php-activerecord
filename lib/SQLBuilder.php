@@ -15,13 +15,19 @@ class SQLBuilder
 	private $operation = 'SELECT';
 	private $table;
 	private $select = '*';
-	private $joins;
 	private $order;
 	private $limit;
 	private $offset;
 	private $group;
 	private $having;
+
+    // for joins
+    private $joins;
+    private $joins_values = array();
+
+    // for update
 	private $update;
+    private $update_values = array();
 
 	// for where
 	private $where;
@@ -82,16 +88,30 @@ class SQLBuilder
 		if ($this->data)
 			$ret = array_values($this->data);
 
-		if ($this->get_where_values())
-			$ret = array_merge($ret,$this->get_where_values());
+		if ($this->get_param_values())
+			$ret = array_merge($ret,$this->get_param_values());
 
 		return array_flatten($ret);
 	}
 
+    /**
+     * @deprecated
+     * @see get_param_values
+     * @return array
+     */
 	public function get_where_values()
 	{
-		return $this->where_values;
+        return $this->get_param_values();
 	}
+
+    /**
+     * Return join and where parameters
+     * @return array
+     */
+    public function get_param_values()
+    {
+        return array_merge($this->joins_values, $this->update_values, $this->where_values);
+    }
 
 	public function where(/* (conditions, values) || (hash) */)
 	{
@@ -99,21 +119,27 @@ class SQLBuilder
 		return $this;
 	}
 
-	public function order($order)
-	{
-		$this->order = $order;
-		return $this;
-	}
+    public function order($order)
+    {
+        $this->order = empty($this->order) ? $order : $this->order.', '.$order;
+        return $this;
+    }
 
-	public function group($group)
-	{
-		$this->group = $group;
-		return $this;
-	}
+    public function group($group)
+    {
+        $this->group = empty($this->group) ? $group : $this->group.', '.$group;
+        return $this;
+    }
+
+    public function from($from)
+    {
+        $this->table = $from;
+        return $this;
+    }
 
 	public function having($having)
 	{
-		$this->having = $having;
+        $this->having = empty($this->having) ? $having : $this->having.', '.$having;
 		return $this;
 	}
 
@@ -129,18 +155,52 @@ class SQLBuilder
 		return $this;
 	}
 
-	public function select($select)
-	{
-		$this->operation = 'SELECT';
-		$this->select = $select;
-		return $this;
-	}
+    public function select($select)
+    {
+        $this->operation = 'SELECT';
+        $select = trim($select, ", \t\n");
+        $this->select = ($this->select === '*') ? $select : $this->select.', '.$select;
+        return $this;
+    }
 
-	public function joins($joins)
-	{
-		$this->joins = $joins;
-		return $this;
-	}
+    /**
+     * @param $join
+     * @return $this|void
+     * @throws \ActiveRecord\ExpressionsException
+     */
+    public function joins($join /*, value1, value2, value3 */)
+    {
+        $args = func_get_args();
+        $num_args = count($args);
+
+        if ($num_args == 1) {
+            $this->joins = $this->joins.' '.$join;
+        }
+
+        elseif ($num_args > 1) {
+
+            $values = array_slice($args,1);
+
+            foreach ($values as $name => &$value)
+            {
+                if (is_array($value))
+                {
+                    $e = new Expressions($this->connection,$join);
+                    $e->bind_values($values);
+
+                    $this->joins = $this->joins.' '.$e->to_s();
+                    $this->joins_values = array_merge($this->joins_values, array_flatten($e->values()));
+                    return;
+                }
+            }
+
+            // no nested array so nothing special to do
+            $this->joins = $this->joins.' '.$join;
+            $this->joins_values =  array_merge($this->joins_values, $values);
+        }
+
+        return $this;
+    }
 
 	public function insert($hash, $pk=null, $sequence_name=null)
 	{
@@ -156,19 +216,60 @@ class SQLBuilder
 		return $this;
 	}
 
-	public function update($mixed)
-	{
-		$this->operation = 'UPDATE';
+    public function update($set /*, value1, value2, value3 */)
+    {
+        $this->operation = 'UPDATE';
 
-		if (is_hash($mixed))
-			$this->data = $mixed;
-		elseif (is_string($mixed))
-			$this->update = $mixed;
-		else
-			throw new ActiveRecordException('Updating requires a hash or string.');
+        if (is_hash($set)) {
+            $this->data = $set;
+            return $this;
+        }
 
-		return $this;
-	}
+        if (!is_string($set)) {
+            throw new ActiveRecordException('Updating requires a hash or string.');
+        }
+
+        $args = func_get_args();
+        $num_args = count($args);
+
+        if ($num_args == 1) {
+
+            if (empty($this->update))
+                $this->update = $set;
+            else
+                $this->update .= ', ' . $set;
+
+        } elseif ($num_args > 1) {
+
+            $values = array_slice($args,1);
+
+            foreach ($values as $name => &$value)
+            {
+                if (is_array($value))
+                {
+                    $e = new Expressions($this->connection, $set);
+                    $e->bind_values($values);
+
+                    if (empty($this->update))
+                        $this->update = $e->to_s();
+                    else
+                        $this->update .= ', ' . $e->to_s();
+
+                    $this->update_values = array_merge($this->update_values, array_flatten($e->values()));
+                    return;
+                }
+            }
+
+            if (empty($this->update))
+                $this->update = $set;
+            else
+                $this->update .= ', ' . $set;
+
+            $this->update_values = array_merge($this->update_values, $values);
+        }
+
+        return $this;
+    }
 
 	public function delete()
 	{
@@ -217,7 +318,7 @@ class SQLBuilder
 			return null;
 
 		$parts = preg_split('/(_and_|_or_)/i',$name,-1,PREG_SPLIT_DELIM_CAPTURE);
-		$num_values = count($values);
+        $num_values = is_null($values) ? 0 : count($values);
 		$conditions = array('');
 
 		for ($i=0,$j=0,$n=count($parts); $i<$n; $i+=2,++$j)
@@ -289,40 +390,40 @@ class SQLBuilder
 		return $new;
 	}
 
-	private function apply_where_conditions($args)
-	{
-		require_once 'Expressions.php';
-		$num_args = count($args);
+    private function apply_where_conditions($args)
+    {
+        require_once 'Expressions.php';
+        $num_args = count($args);
 
-		if ($num_args == 1 && is_hash($args[0]))
-		{
-			$hash = is_null($this->joins) ? $args[0] : $this->prepend_table_name_to_fields($args[0]);
-			$e = new Expressions($this->connection,$hash);
-			$this->where = $e->to_s();
-			$this->where_values = array_flatten($e->values());
-		}
-		elseif ($num_args > 0)
-		{
-			// if the values has a nested array then we'll need to use Expressions to expand the bind marker for us
-			$values = array_slice($args,1);
+        if ($num_args == 1 && is_hash($args[0]))
+        {
+            $hash = is_null($this->joins) ? $args[0] : $this->prepend_table_name_to_fields($args[0]);
+            $e = new Expressions($this->connection,$hash);
+            $this->where = $e->to_s();
+            $this->where_values = array_flatten($e->values());
+        }
+        elseif ($num_args > 0)
+        {
+            // if the values has a nested array then we'll need to use Expressions to expand the bind marker for us
+            $values = array_slice($args,1);
 
-			foreach ($values as $name => &$value)
-			{
-				if (is_array($value))
-				{
-					$e = new Expressions($this->connection,$args[0]);
-					$e->bind_values($values);
-					$this->where = $e->to_s();
-					$this->where_values = array_flatten($e->values());
-					return;
-				}
-			}
+            foreach ($values as $name => &$value)
+            {
+                if (is_array($value))
+                {
+                    $e = new Expressions($this->connection,$args[0]);
+                    $e->bind_values($values);
+                    $this->where = ( empty($this->where) ? '' : $this->where . ' AND ' ) . $e->to_s();
+                    $this->where_values = array_merge($this->where_values, array_flatten($e->values()));
+                    return;
+                }
+            }
 
-			// no nested array so nothing special to do
-			$this->where = $args[0];
-			$this->where_values = &$values;
-		}
-	}
+            // no nested array so nothing special to do
+            $this->where = ( empty($this->where) ? '' : $this->where . ' AND ' ) . $args[0];
+            $this->where_values =  array_merge($this->where_values,$values);
+        }
+    }
 
 	private function build_delete()
 	{

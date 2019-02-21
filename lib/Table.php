@@ -35,6 +35,11 @@ class Table
 	 */
 	public $db_name;
 
+    /**
+     * Name of the schema, used with postgresql (optional)
+     */
+    public $schema_name;
+
 	/**
 	 * Name of the sequence for this table (optional). Defaults to {$table}_seq
 	 */
@@ -113,6 +118,13 @@ class Table
 		}
 		return ($this->conn = ConnectionManager::get_connection($connection));
 	}
+
+    public static function reestablish_connection_all()
+    {
+        foreach (self::$cache as $table) {
+            $table->reestablish_connection(false);
+        }
+    }
 
 	public function create_joins($joins)
 	{
@@ -311,8 +323,22 @@ class Table
 	{
 		$table = $quote_name ? $this->conn->quote_name($this->table) : $this->table;
 
-		if ($this->db_name)
-			$table = $this->conn->quote_name($this->db_name) . ".$table";
+        if ($this->conn instanceof PgsqlAdapter) {
+
+            if ($this->schema_name)
+                $table = ($quote_name ? $this->conn->quote_name($this->schema_name) : $this->schema_name) . ".$table";
+            elseif ($this->conn->schema)
+                $table = ($quote_name ? $this->conn->quote_name($this->conn->schema) : $this->conn->schema) . ".$table";
+            else
+                $table = ($quote_name ? $this->conn->quote_name('public') : 'public') . ".$table";
+
+        }
+
+        else {
+
+            if ($this->db_name)
+                $table = $this->conn->quote_name($this->db_name) . ".$table";
+        }
 
 		return $table;
 	}
@@ -474,8 +500,16 @@ class Table
 			$this->table = $parts[count($parts)-1];
 		}
 
-		if (($db = $this->class->getStaticPropertyValue('db',null)) || ($db = $this->class->getStaticPropertyValue('db_name',null)))
-			$this->db_name = $db;
+        if ($this->conn instanceof PgsqlAdapter) {
+            if (($db = $this->class->getStaticPropertyValue('schema',null)) || ($db = $this->class->getStaticPropertyValue('schema_name',null)))
+                $this->schema_name = $db;
+        }
+
+        else {
+            if (($db = $this->class->getStaticPropertyValue('db',null)) || ($db = $this->class->getStaticPropertyValue('db_name',null)))
+                $this->db_name = $db;
+        }
+
 	}
 
 	private function set_cache()
