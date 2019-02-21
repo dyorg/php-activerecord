@@ -18,12 +18,18 @@ class PgsqlAdapter extends Connection
 
     public function __construct($info)
     {
-        parent::__construct($info);
-
         if (!empty($info->schema)) {
             $this->schema = $info->schema;
-            $this->query("SET SEARCH_PATH TO '$info->schema', 'public'");
         }
+        parent::__construct($info);
+    }
+
+    public function query($sql, &$values=array())
+    {
+        if (!empty($this->schema)) {
+            $sql = preg_replace('/(from|join)\s+(\w+[^\w\(\.])/i', "$1 {$this->schema}.$2", $sql);
+        }
+        return parent::query($sql, $values);
     }
 
 	public function supports_sequences()
@@ -75,12 +81,12 @@ SELECT
 SQL;
 
         $values = explode('.', $table);
-		return $this->query($sql,$values);
+		return parent::query($sql,$values);
 	}
 
 	public function query_for_tables()
 	{
-		return $this->query("SELECT tablename FROM pg_tables WHERE schemaname NOT IN('information_schema','pg_catalog')");
+		return parent::query("SELECT tablename FROM pg_tables WHERE schemaname NOT IN('information_schema','pg_catalog')");
 	}
 
 	public function create_column(&$column)
@@ -129,7 +135,7 @@ SQL;
 
 	public function set_encoding($charset)
 	{
-		$this->query("SET NAMES '$charset'");
+		parent::query("SET NAMES '$charset'");
 	}
 
 	public function native_database_types()
