@@ -37,15 +37,16 @@ class PgsqlAdapter extends Connection
 		return true;
 	}
 
-	public function get_sequence_name($table, $column_name)
-	{
-		return "{$table}_{$column_name}_seq";
-	}
+    public function get_sequence_name($table, $column_name)
+    {
+        $sequence_name = "{$table}_{$column_name}_seq";
 
-	public function next_sequence_value($sequence_name)
-	{
-		return "nextval('" . str_replace("'","\\'",$sequence_name) . "')";
-	}
+        if (!empty($this->schema)) {
+            $sequence_name = $this->schema . '.' . $sequence_name;
+        }
+
+        return $sequence_name;
+    }
 
 	public function limit($sql, $offset, $limit)
 	{
