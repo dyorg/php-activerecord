@@ -48,6 +48,11 @@ class PgsqlAdapter extends Connection
         return $sequence_name;
     }
 
+	public function next_sequence_value($sequence_name)
+	{
+		return "nextval('" . str_replace("'","\\'",$sequence_name) . "')";
+	}
+
 	public function limit($sql, $offset, $limit)
 	{
 		return $sql . ' LIMIT ' . intval($limit) . ' OFFSET ' . intval($offset);
