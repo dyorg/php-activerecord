@@ -2,8 +2,9 @@
 .buildpath
 .settings
 *.log
-test/*.db
+*.db
 *.swp
-.idea
-vendor
+vendor/*
 composer.lock
+phpunit.xml
+.idea

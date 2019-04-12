@@ -10,11 +10,14 @@ if (!defined('PHP_ACTIVERECORD_AUTOLOAD_PREPEND'))
 require __DIR__.'/lib/Singleton.php';
 require __DIR__.'/lib/Config.php';
 require __DIR__.'/lib/Utils.php';
+require __DIR__.'/lib/DateTimeInterface.php';
 require __DIR__.'/lib/DateTime.php';
 require __DIR__.'/lib/Model.php';
+require __DIR__.'/lib/ModelCollection.php';
 require __DIR__.'/lib/Table.php';
 require __DIR__.'/lib/ConnectionManager.php';
 require __DIR__.'/lib/Connection.php';
+require __DIR__.'/lib/Serialization.php';
 require __DIR__.'/lib/SQLBuilder.php';
 require __DIR__.'/lib/Reflections.php';
 require __DIR__.'/lib/Inflector.php';
@@ -46,4 +49,3 @@ function activerecord_autoload($class_name)
 	if (file_exists($file))
 		require_once $file;
 }
-?>

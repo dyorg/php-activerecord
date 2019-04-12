@@ -35,10 +35,25 @@ class Table
 	 */
 	public $db_name;
 
+    /**
+     * Name of the schema, used with postgresql (optional)
+     */
+    public $schema_name;
+
 	/**
 	 * Name of the sequence for this table (optional). Defaults to {$table}_seq
 	 */
 	public $sequence;
+
+	/**
+	 * Whether to cache individual models or not (not to be confused with caching of table schemas).
+	 */
+	public $cache_individual_model;
+
+	/**
+	 * Expiration period for model caching.
+	 */
+	public $cache_model_expire;
 
 	/**
 	 * A instance of CallBack for this model/table
@@ -83,6 +98,7 @@ class Table
 		$this->set_primary_key();
 		$this->set_sequence_name();
 		$this->set_delegates();
+		$this->set_cache();
 		$this->set_setters_and_getters();
 
 		$this->callback = new CallBack($class_name);
@@ -103,12 +119,18 @@ class Table
 		return ($this->conn = ConnectionManager::get_connection($connection));
 	}
 
+    public static function reestablish_connection_all()
+    {
+        foreach (self::$cache as $table) {
+            $table->reestablish_connection(false);
+        }
+    }
+
 	public function create_joins($joins)
 	{
 		if (!is_array($joins))
 			return $joins;
 
-		$self = $this->table;
 		$ret = $space = '';
 
 		$existing_tables = array();
@@ -209,6 +231,15 @@ class Table
 		return $this->find_by_sql($sql->to_s(),$sql->get_where_values(), $readonly, $eager_load);
 	}
 
+	public function cache_key_for_model($pk)
+	{
+		if (is_array($pk))
+		{
+			$pk = implode('-', $pk);
+		}
+		return $this->class->name . '-' . $pk;
+	}
+
 	public function find_by_sql($sql, $values=null, $readonly=false, $includes=null)
 	{
 		$this->last_sql = $sql;
@@ -217,9 +248,22 @@ class Table
 		$list = $attrs = array();
 		$sth = $this->conn->query($sql,$this->process_data($values));
 
+		$self = $this;
 		while (($row = $sth->fetch()))
 		{
-			$model = new $this->class->name($row,false,true,false);
+			$cb = function() use ($row, $self)
+			{
+				return new $self->class->name($row, false, true, false);
+			};
+			if ($this->cache_individual_model)
+			{
+				$key = $this->cache_key_for_model(array_intersect_key($row, array_flip($this->pk)));
+				$model = Cache::get($key, $cb, $this->cache_model_expire);
+			}
+			else
+			{
+				$model = $cb();
+			}
 
 			if ($readonly)
 				$model->readonly();
@@ -254,7 +298,7 @@ class Table
 			// nested include
 			if (is_array($name))
 			{
-				$nested_includes = count($name) > 0 ? $name : $name[0];
+				$nested_includes = count($name) > 0 ? $name : array();
 				$name = $index;
 			}
 			else
@@ -279,8 +323,22 @@ class Table
 	{
 		$table = $quote_name ? $this->conn->quote_name($this->table) : $this->table;
 
-		if ($this->db_name)
-			$table = $this->conn->quote_name($this->db_name) . ".$table";
+        if ($this->conn instanceof PgsqlAdapter) {
+
+            if ($this->schema_name)
+                $table = ($quote_name ? $this->conn->quote_name($this->schema_name) : $this->schema_name) . ".$table";
+            elseif ($this->conn->schema)
+                $table = ($quote_name ? $this->conn->quote_name($this->conn->schema) : $this->conn->schema) . ".$table";
+            else
+                $table = ($quote_name ? $this->conn->quote_name('public') : 'public') . ".$table";
+
+        }
+
+        else {
+
+            if ($this->db_name)
+                $table = $this->conn->quote_name($this->db_name) . ".$table";
+        }
 
 		return $table;
 	}
@@ -292,7 +350,7 @@ class Table
 	 * @param $name string name of Relationship
 	 * @param $strict bool
 	 * @throws RelationshipException
-	 * @return Relationship or null
+	 * @return HasOne|HasMany|BelongsTo Relationship or null
 	 */
 	public function get_relationship($name, $strict=false)
 	{
@@ -396,9 +454,10 @@ class Table
 		if (!$hash)
 			return $hash;
 
+		$date_class = Config::instance()->get_date_class();
 		foreach ($hash as $name => &$value)
 		{
-			if ($value instanceof \DateTime)
+			if ($value instanceof $date_class || $value instanceof \DateTime)
 			{
 				if (isset($this->columns[$name]) && $this->columns[$name]->type == Column::DATE)
 					$hash[$name] = $this->conn->date_to_string($value);
@@ -441,8 +500,33 @@ class Table
 			$this->table = $parts[count($parts)-1];
 		}
 
-		if(($db = $this->class->getStaticPropertyValue('db',null)) || ($db = $this->class->getStaticPropertyValue('db_name',null)))
-			$this->db_name = $db;
+        if ($this->conn instanceof PgsqlAdapter) {
+            if (($db = $this->class->getStaticPropertyValue('schema',null)) || ($db = $this->class->getStaticPropertyValue('schema_name',null)))
+                $this->schema_name = $db;
+        }
+
+        else {
+            if (($db = $this->class->getStaticPropertyValue('db',null)) || ($db = $this->class->getStaticPropertyValue('db_name',null)))
+                $this->db_name = $db;
+        }
+
+	}
+
+	private function set_cache()
+	{
+		if (!Cache::$adapter)
+			return;
+
+		$model_class_name = $this->class->name;
+		$this->cache_individual_model = $model_class_name::$cache;
+		if (property_exists($model_class_name, 'cache_expire') && isset($model_class_name::$cache_expire))
+		{
+			$this->cache_model_expire =  $model_class_name::$cache_expire;
+		}
+		else
+		{
+			$this->cache_model_expire = Cache::$options['expire'];
+		}
 	}
 
 	private function set_sequence_name()
@@ -456,7 +540,7 @@ class Table
 
 	private function set_associations()
 	{
-		require_once 'Relationship.php';
+		require_once __DIR__ . '/Relationship.php';
 		$namespace = $this->class->getNamespaceName();
 
 		foreach ($this->class->getStaticProperties() as $name => $definitions)
@@ -467,7 +551,7 @@ class Table
 			foreach (wrap_strings_in_arrays($definitions) as $definition)
 			{
 				$relationship = null;
-				$definition += compact('namespace');
+				$definition += array('namespace' => $namespace);
 
 				switch ($name)
 				{
@@ -551,5 +635,4 @@ class Table
 			trigger_error('static::$getters and static::$setters are deprecated. Please define your setters and getters by declaring methods in your model prefixed with get_ or set_. See
 			http://www.phpactiverecord.org/projects/main/wiki/Utilities#attribute-setters and http://www.phpactiverecord.org/projects/main/wiki/Utilities#attribute-getters on how to make use of this option.', E_USER_DEPRECATED);
 	}
-};
-?>
+}
