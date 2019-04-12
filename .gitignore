@@ -5,3 +5,5 @@
 test/*.db
 *.swp
 .idea
+vendor
+composer.lock
