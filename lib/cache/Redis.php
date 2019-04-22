@@ -41,7 +41,7 @@ class Redis
 
         if (!$this->adapter)
         {
-            throw new CacheException("Could not connect to $options[host]:$options[port]");
+            throw new CacheException("Could not connect to $connection[host]:$connection[port]");
         }
     }
 
