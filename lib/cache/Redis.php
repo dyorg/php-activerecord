@@ -29,7 +29,6 @@ class Redis
         $connection = array(
             'host'      => $options['host'],
             'port'      => isset($options['port']) ? $options['port'] : self::DEFAULT_PORT,
-            'timeout'   => 0,
             'async'     => false,
         );
 
