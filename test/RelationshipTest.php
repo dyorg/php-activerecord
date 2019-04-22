@@ -81,24 +81,32 @@ class RelationshipTest extends DatabaseTest
 		$this->assert_default_has_many($this->get_relationship());
 	}
 	
-	public function test_gh_256_eager_loading_three_levels_deep()
+	public function test_eager_load_with_empty_nested_includes()
 	{
-		/* Before fix Undefined offset: 0 */
-		$conditions['include'] = array('events'=>array('host'=>array('events')));
-		$venue = Venue::find(2,$conditions);
-		
-		$events = $venue->events;
-		$this->assertEquals(2,count($events));
-		$event_yeah_yeahs = $events[0];
-		$this->assertEquals('Yeah Yeah Yeahs',$event_yeah_yeahs->title);
-		
-		$event_host = $event_yeah_yeahs->host;
-		$this->assertEquals('Billy Crystal',$event_host->name);
-		
-		$bill_events = $event_host->events;
-		
-		$this->assertEquals('Yeah Yeah Yeahs',$bill_events[0]->title);
+		$conditions['include'] = array('events'=>array());
+		Venue::find(2, $conditions);
+
+		$this->assert_sql_has("WHERE venue_id IN(?)", ActiveRecord\Table::load('Event')->last_sql);
 	}
+
+    public function test_gh_256_eager_loading_three_levels_deep()
+    {
+        /* Before fix Undefined offset: 0 */
+        $conditions['include'] = array('events'=>array('host'=>array('events')));
+        $venue = Venue::find(2,$conditions);
+
+        $events = $venue->events;
+        $this->assertEquals(2,count($events));
+        $event_yeah_yeahs = $events[0];
+        $this->assertEquals('Yeah Yeah Yeahs',$event_yeah_yeahs->title);
+
+        $event_host = $event_yeah_yeahs->host;
+        $this->assertEquals('Billy Crystal',$event_host->name);
+
+        $bill_events = $event_host->events;
+
+        $this->assertEquals('Yeah Yeah Yeahs',$bill_events[0]->title);
+    }
 	
 	/**
 	 * @expectedException ActiveRecord\RelationshipException
@@ -130,6 +138,12 @@ class RelationshipTest extends DatabaseTest
 	public function test_belongs_to_returns_null_when_no_record()
 	{
 		$event = Event::find(6);
+		$this->assert_null($event->venue);
+	}
+
+	public function test_belongs_to_returns_null_when_foreign_key_is_null()
+	{
+		$event = Event::create(array('title' => 'venueless event'));
 		$this->assert_null($event->venue);
 	}
 
@@ -222,6 +236,16 @@ class RelationshipTest extends DatabaseTest
 		$values = array('city' => 'Richmond', 'state' => 'VA', 'name' => 'Club 54', 'address' => '123 street');
 		$venue = $event->create_venue($values);
 		$this->assert_not_null($venue->id);
+	}
+
+	public function test_build_association_overwrites_guarded_foreign_keys()
+	{
+		$author = new AuthorAttrAccessible();
+		$author->save();
+
+		$book = $author->build_book();
+
+		$this->assert_not_null($book->author_id);
 	}
 
 	public function test_belongs_to_can_be_self_referential()
@@ -537,6 +561,13 @@ class RelationshipTest extends DatabaseTest
 			$this->assert_equals($event->venue_id, $venues[0]->id);
 
 		$this->assert_equals(2, count($venues[0]->events));
+	}
+
+	public function test_eager_loading_has_many_x_with_caching()
+	{
+		$this->markTestSkipped('fails on with php 7+');
+		Publisher::find(array(1, 2, 3), array('include' => 'authors'));
+		$this->assert_sql_has("WHERE publisher_id IN(?)",ActiveRecord\Table::load('Author')->last_sql);
 	}
 
 	public function test_eager_loading_has_many_with_no_related_rows()
