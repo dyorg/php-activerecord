@@ -61,7 +61,7 @@ class Redis
     {
         $data = $this->adapter->get($key);
 
-        return $data ? json_decode($data) : null;
+        return $data ? unserialize($data) : null;
     }
 
     /**
@@ -71,7 +71,7 @@ class Redis
      */
     public function write($key, $value, $expire)
     {
-        $this->adapter->setex($key, $expire, json_encode($value));
+        $this->adapter->setex($key, $expire, serialize($value));
     }
 
     /**
