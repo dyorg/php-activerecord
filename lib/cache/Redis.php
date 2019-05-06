@@ -26,18 +26,21 @@ class Redis
      */
     public function __construct($options)
     {
-        $options['port'] = isset($options['port']) ? $options['port'] : self::DEFAULT_PORT;
+        $connection = array(
+            'host'      => $options['host'],
+            'port'      => isset($options['port']) ? $options['port'] : self::DEFAULT_PORT,
+            'async'     => false,
+        );
 
-        $this->adapter = new \Predis\Client([
-            'host' => $options['host'],
-            'port' => $options['port'],
-            'timeout' => 0,
-            'async' => false,
-        ]);
+        if (isset($options['pass'])) {
+            $connection['password'] = $options['pass'];
+        }
+
+        $this->adapter = new \Predis\Client($connection);
 
         if (!$this->adapter)
         {
-            throw new CacheException("Could not connect to $options[host]:$options[port]");
+            throw new CacheException("Could not connect to $connection[host]:$connection[port]");
         }
     }
 
