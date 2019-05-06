@@ -27,7 +27,7 @@ class PgsqlAdapter extends Connection
     public function query($sql, &$values=array())
     {
         if (!empty($this->schema)) {
-            $sql = preg_replace('/(from|join)\s+(\w+[^\w\(\.])/i', "$1 {$this->schema}.$2", $sql);
+            $sql = preg_replace('/(from|join|update)\s+(\w+[^\w\(\.])/i', "$1 {$this->schema}.$2", $sql);
         }
         return parent::query($sql, $values);
     }
