@@ -6,7 +6,7 @@ namespace ActiveRecord;
 
 /**
  * Adapter for Postgres (not completed yet)
- * 
+ *
  * @package ActiveRecord
  */
 class PgsqlAdapter extends Connection
@@ -27,8 +27,18 @@ class PgsqlAdapter extends Connection
     public function query($sql, &$values=array())
     {
         if (!empty($this->schema)) {
-            $sql = preg_replace('/(from|join|update)\s+(\w+[^\w\(\.])/i', "$1 {$this->schema}.$2", $sql);
+
+        	$joinLateralReplaceCount = 0;
+			$sql = preg_replace('/(join lateral)/', "#lateral# join", $sql,-1, $joinLateralReplaceCount);
+
+        	$regex = '/(from|update|join)\s+([^_"]\w+[^\w\(\.])/i';
+            $sql = preg_replace($regex, "$1 {$this->schema}.$2", $sql);
+
+            if ($joinLateralReplaceCount > 0) {
+				$sql = preg_replace('/(#lateral# join)/', "join lateral", $sql);
+			}
         }
+        
         return parent::query($sql, $values);
     }
 
@@ -70,7 +80,7 @@ class PgsqlAdapter extends Connection
         	WHERE c.oid = pg_index.indrelid
         	AND a.attnum = ANY (pg_index.indkey)
         	AND pg_index.indisprimary = 't'
-      		) IS NOT NULL AS pk,      
+      		) IS NOT NULL AS pk,
       		REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE((SELECT pg_attrdef.adsrc
         	FROM pg_attrdef
         	WHERE c.oid = pg_attrdef.adrelid
@@ -80,7 +90,7 @@ class PgsqlAdapter extends Connection
 			JOIN pg_class c ON c.oid = a.attrelid
 			JOIN pg_type t on t.oid = a.atttypid
 			JOIN pg_namespace n ON n.oid = c.relnamespace
-			WHERE n.nspname = ? 
+			WHERE n.nspname = ?
 			AND c.relname = ?
 			AND a.attnum > 0
 			ORDER BY a.attnum
