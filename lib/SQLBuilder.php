@@ -155,11 +155,12 @@ class SQLBuilder
 		return $this;
 	}
 
-    public function select($select)
+    public function select($select, $addSeparator = true)
     {
         $this->operation = 'SELECT';
         $select = trim($select, ", \t\n");
-        $this->select = ($this->select === '*') ? $select : $this->select.', '.$select;
+        $separator = $addSeparator ? ', ' : ' ';
+        $this->select = ($this->select === '*') ? $select : $this->select . $separator . $select;
         return $this;
     }
 

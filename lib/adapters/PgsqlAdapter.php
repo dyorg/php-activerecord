@@ -31,14 +31,14 @@ class PgsqlAdapter extends Connection
         	$joinLateralReplaceCount = 0;
 			$sql = preg_replace('/(join lateral)/', "#lateral# join", $sql,-1, $joinLateralReplaceCount);
 
-        	$regex = '/(from|update|join)\s+([^_"]\w+[^\w\(\.])/i';
+        	$regex = '/(from|update|join)\s+([^\(_"]\w+[^\w\(\.])/i';
             $sql = preg_replace($regex, "$1 {$this->schema}.$2", $sql);
 
             if ($joinLateralReplaceCount > 0) {
 				$sql = preg_replace('/(#lateral# join)/', "join lateral", $sql);
 			}
         }
-        
+
         return parent::query($sql, $values);
     }
 
