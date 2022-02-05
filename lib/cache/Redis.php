@@ -30,11 +30,9 @@ class Redis
             'host'      => $options['host'],
             'port'      => isset($options['port']) ? $options['port'] : self::DEFAULT_PORT,
             'async'     => false,
+			'username'	=> isset($options['user']) ? $options['user'] : null,
+			'password'	=> isset($options['pass']) ? $options['pass'] : null,
         );
-
-        if (isset($options['pass'])) {
-            $connection['password'] = $options['pass'];
-        }
 
         $this->adapter = new \Predis\Client($connection);
 
