@@ -145,13 +145,22 @@ class SQLBuilder
 
 	public function limit($limit)
 	{
-		$this->limit = intval($limit);
+		$this->limit = $limit;
 		return $this;
 	}
 
 	public function offset($offset)
 	{
 		$this->offset = intval($offset);
+		return $this;
+	}
+
+	/**
+	 * @return $this
+	 */
+	public function resetSelect()
+	{
+		$this->select = '*';
 		return $this;
 	}
 
