@@ -110,8 +110,32 @@ class SQLBuilder
      */
     public function get_param_values()
     {
-        return array_merge($this->joins_values, $this->update_values, $this->where_values);
+        $values = array_merge($this->joins_values, $this->update_values, $this->where_values);
+        $values = $this->process_data($values);
+        return $values;
     }
+
+	/**
+	 * @param $hash
+	 * @return mixed|null
+	 */
+	private function process_data($hash)
+	{
+		if (!$hash)
+			return $hash;
+
+		foreach ($hash as $name => &$value)
+		{
+			if (is_bool($value)) {
+				$hash[$name] = $value ? '1' : '0';
+			}
+			else {
+				$hash[$name] = $value;
+			}
+		}
+
+		return $hash;
+	}
 
 	public function where(/* (conditions, values) || (hash) */)
 	{

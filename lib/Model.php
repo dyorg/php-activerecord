@@ -542,6 +542,11 @@ class Model
 		throw new UndefinedPropertyException(get_called_class(),$name);
 	}
 
+	public function remove_attribute($name)
+	{
+		unset($this->attributes[$name]);
+	}
+
 	/**
 	 * Flags an attribute as dirty.
 	 *
