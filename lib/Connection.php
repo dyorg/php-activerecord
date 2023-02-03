@@ -418,6 +418,16 @@ abstract class Connection
 	}
 
 	/**
+	 * Tells you if this adapter supports insert return id or not.
+	 *
+	 * @return boolean
+	 */
+	function supports_insert_return_id()
+	{
+		return false;
+	}
+
+	/**
 	 * Return a default sequence name for the specified table.
 	 *
 	 * @param string $table Name of a table

@@ -47,6 +47,15 @@ class PgsqlAdapter extends Connection
 		return true;
 	}
 
+	/**
+	 * support postgresql +8.1
+	 * @return bool
+	 */
+	public function supports_insert_return_id()
+	{
+		return true;
+	}
+
     public function get_sequence_name($table, $column_name)
     {
         $sequence_name = "{$table}_{$column_name}_seq";

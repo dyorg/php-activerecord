@@ -14,6 +14,8 @@ class SQLBuilder
 	private $connection;
 	private $operation = 'SELECT';
 	private $table;
+
+	private string|null $withQuery = null;
 	private $select = '*';
 	private $order;
 	private $limit;
@@ -36,6 +38,7 @@ class SQLBuilder
 	// for insert/update
 	private $data;
 	private $sequence;
+	private $pk;
 
 	/**
 	 * Constructor.
@@ -197,6 +200,21 @@ class SQLBuilder
         return $this;
     }
 
+	/**
+	 * Add Common Table Experssions (CTE)
+	 * @link https://www.postgresql.org/docs/current/queries-with.html
+	 * @param string $sql
+	 * @param $alias
+	 */
+    public function withQuery(string $sql, string $alias)
+	{
+		if (empty($this->withQuery)) {
+			$this->withQuery = "WITH $alias AS ($sql)";
+		} else {
+			$this->withQuery = ", $alias AS ($sql)";
+		}
+	}
+
     /**
      * @param $join
      * @return $this|void
@@ -246,6 +264,13 @@ class SQLBuilder
 
 		if ($pk && $sequence_name)
 			$this->sequence = array($pk,$sequence_name);
+
+		if ($pk) {
+			$this->pk = $pk;
+			if ($sequence_name) {
+				$this->sequence = array($pk, $sequence_name);
+			}
+		}
 
 		return $this;
 	}
@@ -489,8 +514,13 @@ class SQLBuilder
 				"INSERT INTO $this->table($keys," . $this->connection->quote_name($this->sequence[0]) .
 				") VALUES(?," . $this->connection->next_sequence_value($this->sequence[1]) . ")";
 		}
-		else
+		else {
 			$sql = "INSERT INTO $this->table($keys) VALUES(?)";
+		}
+
+		if ($this->connection->supports_insert_return_id() && $this->pk) {
+			$sql .= " RETURNING {$this->pk}";
+		}
 
 		$e = new Expressions($this->connection,$sql,array_values($this->data));
 		return $e->to_s();
@@ -498,7 +528,13 @@ class SQLBuilder
 
 	private function build_select()
 	{
-		$sql = "SELECT $this->select FROM $this->table";
+		$sql = "";
+
+		if ($this->withQuery) {
+			$sql .= $this->withQuery;
+		}
+
+		$sql .= "SELECT $this->select FROM $this->table";
 
 		if ($this->joins)
 			$sql .= ' ' . $this->joins;

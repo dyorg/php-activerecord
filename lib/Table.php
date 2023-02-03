@@ -380,7 +380,7 @@ class Table
 
 		$sql = new SQLBuilder($this->conn,$this->get_fully_qualified_table_name());
 		$sql->insert($data,$pk,$sequence_name);
-
+		
 		$values = array_values($data);
 		return $this->conn->query(($this->last_sql = $sql->to_s()),$values);
 	}
@@ -536,6 +536,10 @@ class Table
 	{
 		if (!$this->conn->supports_sequences())
 			return;
+
+		if (!$this->class->getStaticPropertyValue('supports_sequences')) {
+			return;
+		}
 
 		if (!($this->sequence = $this->class->getStaticPropertyValue('sequence')))
 			$this->sequence = $this->conn->get_sequence_name($this->table,$this->pk[0]);

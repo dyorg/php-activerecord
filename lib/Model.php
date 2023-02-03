@@ -154,6 +154,14 @@ class Model
 	static $sequence;
 
 	/**
+	 * Set this to enabled supports sequences for the table.
+	 * You should disabled this option when use GUID or UUID
+	 * 
+	 * @var string
+	 */
+	static $supports_sequences = true;
+
+	/**
 	 * Set this to true in your subclass to use caching for this model.
 	 * Note that you must also configure a cache object.
 	 */
@@ -825,37 +833,43 @@ class Model
 
 		$pk = $this->get_primary_key(true);
 		$use_sequence = false;
+		$conn = static::connection();
 
-		if ($table->sequence && !isset($attributes[$pk]))
-		{
-			if (($conn = static::connection()) instanceof OciAdapter)
-			{
-				// terrible oracle makes us select the nextval first
-				$attributes[$pk] = $conn->get_next_sequence_value($table->sequence);
-				$table->insert($attributes);
-				$this->attributes[$pk] = $attributes[$pk];
-			}
-			else
-			{
-				// unset pk that was set to null
-				if (array_key_exists($pk,$attributes))
-					unset($attributes[$pk]);
+		if ($conn->supports_insert_return_id()) {
 
-				$table->insert($attributes,$pk,$table->sequence);
-				$use_sequence = true;
-			}
+			$sth = $table->insert($attributes, $pk);
+			$this->attributes[$pk] = $sth->fetchColumn();
+
 		}
-		else
-			$table->insert($attributes);
 
-		// if we've got an autoincrementing/sequenced pk set it
-		// don't need this check until the day comes that we decide to support composite pks
-		// if (count($pk) == 1)
-		{
-			$column = $table->get_column_by_inflected_name($pk);
+		else {
 
-			if ($column->auto_increment || $use_sequence)
-				$this->attributes[$pk] = static::connection()->insert_id($table->sequence);
+			if ($table->sequence && !isset($attributes[$pk])) {
+				if ($conn instanceof OciAdapter) {
+					// terrible oracle makes us select the nextval first
+					$attributes[$pk] = $conn->get_next_sequence_value($table->sequence);
+					$table->insert($attributes);
+					$this->attributes[$pk] = $attributes[$pk];
+				} else {
+					// unset pk that was set to null
+					if (array_key_exists($pk, $attributes))
+						unset($attributes[$pk]);
+
+					$table->insert($attributes, $pk, $table->sequence);
+					$use_sequence = true;
+				}
+			} else
+				$table->insert($attributes);
+
+			// if we've got an autoincrementing/sequenced pk set it
+			// don't need this check until the day comes that we decide to support composite pks
+			// if (count($pk) == 1)
+			{
+				$column = $table->get_column_by_inflected_name($pk);
+				if ($column->auto_increment || $use_sequence)
+					$this->attributes[$pk] = static::connection()->insert_id($table->sequence);
+			}
+
 		}
 
 		$this->__new_record = false;
