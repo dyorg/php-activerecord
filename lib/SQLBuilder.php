@@ -262,9 +262,6 @@ class SQLBuilder
 		$this->operation = 'INSERT';
 		$this->data = $hash;
 
-		if ($pk && $sequence_name)
-			$this->sequence = array($pk,$sequence_name);
-
 		if ($pk) {
 			$this->pk = $pk;
 			if ($sequence_name) {
