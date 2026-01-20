@@ -8,6 +8,7 @@ namespace ActiveRecord;
 
 require_once 'Column.php';
 
+use App\helpers\log\ExecutionDurationHelper;
 use PDO;
 use PDOException;
 use Closure;
@@ -312,6 +313,8 @@ abstract class Connection
 	{
 		if ($this->logging)
 		{
+			$duration = new ExecutionDurationHelper();
+			$duration->start();
 			$this->logger->log($sql);
 			if ( $values ) $this->logger->log($values);
 		}
@@ -333,6 +336,12 @@ abstract class Connection
 		} catch (PDOException $e) {
 			throw new DatabaseException($e);
 		}
+
+		if ($this->logging)
+		{
+			$this->logger->log('Time execution: ' . $duration->getDuration());
+		}
+
 		return $sth;
 	}
 

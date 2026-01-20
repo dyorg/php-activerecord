@@ -380,9 +380,23 @@ class Table
 
 		$sql = new SQLBuilder($this->conn,$this->get_fully_qualified_table_name());
 		$sql->insert($data,$pk,$sequence_name);
-		
+
 		$values = array_values($data);
 		return $this->conn->query(($this->last_sql = $sql->to_s()),$values);
+	}
+
+	public function insert_many(array $rows, $pk = null, $sequence_name = null)
+	{
+		$data = [];
+		foreach ($rows as $row) {
+			$data[] = $this->process_data($row);
+		}
+
+		$sql = new SQLBuilder($this->conn, $this->get_fully_qualified_table_name());
+		$sql->insert_many($data, $pk, $sequence_name);
+		$bind = $sql->bind_values();
+
+		return $this->conn->query(($this->last_sql = $sql->to_s()), $bind);
 	}
 
 	public function update(&$data, $where)
@@ -463,6 +477,13 @@ class Table
 					$hash[$name] = $this->conn->date_to_string($value);
 				else
 					$hash[$name] = $this->conn->datetime_to_string($value);
+			}
+			else if (is_array($value)) {
+				if (isset($this->columns[$name]) && $this->columns[$name]->type == Column::JSON) {
+					$hash[$name] = json_encode($value);
+				} else {
+					$hash[$name] = '{' . str_putcsv($value) . '}';
+				}
 			}
 			else if (is_bool($value)) {
 				$hash[$name] = $value ? '1' : '0';

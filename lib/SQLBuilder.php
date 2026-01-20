@@ -4,6 +4,8 @@
  */
 namespace ActiveRecord;
 
+use App\helpers\ArrayHelper;
+
 /**
  * Helper class for building sql statements progmatically.
  *
@@ -15,7 +17,9 @@ class SQLBuilder
 	private $operation = 'SELECT';
 	private $table;
 
-	private string|null $withQuery = null;
+	private string|null $cte_query = null;
+	private $cte_values = array();
+
 	private $select = '*';
 	private $order;
 	private $limit;
@@ -39,6 +43,9 @@ class SQLBuilder
 	private $data;
 	private $sequence;
 	private $pk;
+
+	private $whereBracketWaitingOpen = false;
+	private $whereBracketIsOpen = false;
 
 	/**
 	 * Constructor.
@@ -113,10 +120,18 @@ class SQLBuilder
      */
     public function get_param_values()
     {
-        $values = array_merge($this->joins_values, $this->update_values, $this->where_values);
+        $values = array_merge($this->cte_values, $this->joins_values, $this->update_values, $this->where_values);
         $values = $this->process_data($values);
         return $values;
     }
+
+	/**
+	 * @return bool
+	 */
+    public function whereIsEmpty()
+	{
+		return empty($this->where);
+	}
 
 	/**
 	 * @param $hash
@@ -143,6 +158,62 @@ class SQLBuilder
 	public function where(/* (conditions, values) || (hash) */)
 	{
 		$this->apply_where_conditions(func_get_args());
+		return $this;
+	}
+
+	public function whereOR(/* (conditions, values) || (hash) */)
+	{
+		$this->apply_where_conditions(func_get_args(), 'OR');
+		return $this;
+	}
+
+	public function whereOpenBracket() {
+		$this->whereBracketWaitingOpen = true;
+	}
+
+	public function whereCloseBracket() {
+		$this->whereBracketWaitingOpen = false;
+		if ($this->whereBracketIsOpen) {
+			$this->where .= ')';
+			$this->whereBracketIsOpen = false;
+		}
+	}
+
+	/**
+	 * @param string $field
+	 * @param $value
+	 * @return $this
+	 */
+	public function whereEqualOrIn(string $field, $value)
+	{
+		if (is_array($value)) {
+			$value = array_values($value);
+		} else {
+			$value = ArrayHelper::multiselect_explode($value);
+		}
+
+		if (count($value) > 1) {
+			$this->where("$field IN (?)", $value);
+		} else {
+			$this->where("$field = ?", $value[0] ?? null);
+		}
+
+		return $this;
+	}
+
+	/**
+	 * @param string $field
+	 * @param $value
+	 * @return $this
+	 */
+	public function whereEqualOrInOrNull(string $field, $value)
+	{
+		$ids = ArrayHelper::multiselect_explode($value);
+		if (count($ids) > 1) {
+			$this->where("($field IN (?) OR $field IS NULL)", $ids);
+		} else {
+			$this->where("($field = ? OR $field IS NULL)", $value);
+		}
 		return $this;
 	}
 
@@ -206,12 +277,28 @@ class SQLBuilder
 	 * @param string $sql
 	 * @param $alias
 	 */
-    public function withQuery(string $sql, string $alias)
+    public function withQuery(string $sql, string $alias /*, value1, value2, value3 */)
 	{
-		if (empty($this->withQuery)) {
-			$this->withQuery = "WITH $alias AS ($sql)";
+		$args = func_get_args();
+		$num_args = count($args);
+
+		if (empty($this->cte_query)) {
+			$this->cte_query = 'WITH';
 		} else {
-			$this->withQuery = ", $alias AS ($sql)";
+			$this->cte_query .= ',';
+		}
+
+		$this->cte_query .= " $alias AS ($sql)";
+
+//		if (empty($this->cte_query)) {
+//			$this->cte_query = "WITH $alias AS ($sql)";
+//		} else {
+//			$this->cte_query .= ", $alias AS ($sql)";
+//		}
+
+		if ($num_args > 2) {
+			$values = array_slice($args,2);
+			$this->cte_values = array_merge($this->cte_values, $values);
 		}
 	}
 
@@ -272,7 +359,15 @@ class SQLBuilder
 		return $this;
 	}
 
-    public function update($set /*, value1, value2, value3 */)
+	public function insert_many(array $rows, $pk = null, $sequence_name = null)
+	{
+		$this->operation = 'INSERT_MANY';
+		$this->data = $rows;
+		$this->pk = $pk;
+		$this->sequence = $sequence_name ? [$pk, $sequence_name] : null;
+	}
+
+	public function update($set /*, value1, value2, value3 */)
     {
         $this->operation = 'UPDATE';
 
@@ -446,7 +541,7 @@ class SQLBuilder
 		return $new;
 	}
 
-    private function apply_where_conditions($args)
+    private function apply_where_conditions($args, $operator = 'AND')
     {
         require_once 'Expressions.php';
         $num_args = count($args);
@@ -460,6 +555,14 @@ class SQLBuilder
         }
         elseif ($num_args > 0)
         {
+			$start = '';
+			if ($this->whereBracketWaitingOpen) {
+//				$operator .= ' (';
+				$start = ' (';
+				$this->whereBracketWaitingOpen = false;
+				$this->whereBracketIsOpen = true;
+			}
+
             // if the values has a nested array then we'll need to use Expressions to expand the bind marker for us
             $values = array_slice($args,1);
 
@@ -469,14 +572,14 @@ class SQLBuilder
                 {
                     $e = new Expressions($this->connection,$args[0]);
                     $e->bind_values($values);
-                    $this->where = ( empty($this->where) ? '' : $this->where . ' AND ' ) . $e->to_s();
+                    $this->where = ( empty($this->where) ? $start : $this->where . " $operator $start" ) . $e->to_s();
                     $this->where_values = array_merge($this->where_values, array_flatten($e->values()));
                     return;
                 }
             }
 
             // no nested array so nothing special to do
-            $this->where = ( empty($this->where) ? '' : $this->where . ' AND ' ) . $args[0];
+            $this->where = ( empty($this->where) ? $start : $this->where . " $operator $start" ) . $args[0];
             $this->where_values =  array_merge($this->where_values,$values);
         }
     }
@@ -508,11 +611,11 @@ class SQLBuilder
 		if ($this->sequence)
 		{
 			$sql =
-				"INSERT INTO $this->table($keys," . $this->connection->quote_name($this->sequence[0]) .
+				"INSERT INTO $this->table ($keys," . $this->connection->quote_name($this->sequence[0]) .
 				") VALUES(?," . $this->connection->next_sequence_value($this->sequence[1]) . ")";
 		}
 		else {
-			$sql = "INSERT INTO $this->table($keys) VALUES(?)";
+			$sql = "INSERT INTO $this->table ($keys) VALUES(?)";
 		}
 
 		if ($this->connection->supports_insert_return_id() && $this->pk) {
@@ -523,12 +626,44 @@ class SQLBuilder
 		return $e->to_s();
 	}
 
+	private function build_insert_many()
+	{
+		// usa as keys da primeira linha
+		$first = $this->data[0];
+		$keys  = array_keys($first);
+
+		// nomes das colunas quoteados
+		$quoted = array_map(fn($k) => $this->connection->quote_name($k), $keys);
+		$columns = join(',', $quoted);
+
+		// monta placeholders para cada linha
+		$rowsPlaceholders = [];
+		$bind = [];
+
+		foreach ($this->data as $row) {
+			$marks = array_fill(0, count($row), '?');
+			$rowsPlaceholders[] = '(' . join(',', $marks) . ')';
+
+			foreach ($row as $v) {
+				$bind[] = $v;
+			}
+		}
+
+		$sql = "INSERT INTO $this->table ($columns) VALUES " . join(',', $rowsPlaceholders);
+
+		if ($this->connection->supports_insert_return_id() && $this->pk) {
+			$sql .= " RETURNING {$this->pk}";
+		}
+
+		return $sql;
+	}
+
 	private function build_select()
 	{
-		$sql = "";
+		$sql = '';
 
-		if ($this->withQuery) {
-			$sql .= $this->withQuery;
+		if ($this->cte_query) {
+			$sql .= $this->cte_query;
 		}
 
 		$sql .= "SELECT $this->select FROM $this->table";
@@ -556,12 +691,21 @@ class SQLBuilder
 
 	private function build_update()
 	{
+		$sql = '';
+
+		if ($this->cte_query) {
+			$sql .= $this->cte_query;
+		}
+
 		if (strlen($this->update) > 0)
 			$set = $this->update;
 		else
 			$set = join('=?, ', $this->quoted_key_names()) . '=?';
 
-		$sql = "UPDATE $this->table SET $set";
+		$sql .= "UPDATE $this->table SET $set";
+
+		if ($this->joins)
+			$sql .= ' ' . $this->joins;
 
 		if ($this->where)
 			$sql .= " WHERE $this->where";

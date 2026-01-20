@@ -20,6 +20,11 @@ class Column
 	const TIME		= 6;
 	const BOOLEAN	= 7;
 
+	const ARRAY_STRING = 8;
+	const ARRAY_INTEGER = 9;
+
+	const JSON = 10;
+
 	/**
 	 * Map a type to an column type.
 	 * @static
@@ -42,8 +47,12 @@ class Column
 		'numeric'	=> self::DECIMAL,
 		'decimal'	=> self::DECIMAL,
 		'dec'		=> self::DECIMAL,
+		'boolean' 	=> self::BOOLEAN,
 
-		'boolean' 	=> self::BOOLEAN);
+		'integer[]' => self::ARRAY_INTEGER,
+		'json' => 	self::JSON,
+		'jsonb' => 	self::JSON
+	);
 
 	/**
 	 * The true name of this column.
@@ -146,6 +155,46 @@ class Column
 		return (int) $value;
 	}
 
+	public function castArrayInteger($value): array
+	{
+		return array_map(function($v) {
+			return (int) $v;
+		}, $value);
+	}
+
+	private function convertePostgresqlArrayToPhpArray($value): array
+	{
+		if (is_array($value)) {
+			return $value;
+		}
+
+		if ($value === null || $value === '{}') {
+			return [];
+		}
+
+		$value = trim($value,'{}');
+		return str_getcsv($value);
+
+	}
+
+	/**
+	 * @param $columnName
+	 * @return array
+	 * @throws \ActiveRecord\UndefinedPropertyException
+	 */
+	protected function castJson($value): array
+	{
+		if (is_array($value)) {
+			return $value;
+		}
+
+		if ($value === null || $value === '{}') {
+			return [];
+		}
+
+		return json_decode($value, true) ?? [];
+	}
+
 	/**
 	 * Casts a value to the column's type.
 	 *
@@ -181,6 +230,13 @@ class Column
 					);
 
 				return $connection->string_to_datetime($value);
+			case self::ARRAY_STRING:
+				return static::convertePostgresqlArrayToPhpArray($value);
+			case self::ARRAY_INTEGER:
+				$value = static::convertePostgresqlArrayToPhpArray($value);
+				return static::castArrayInteger($value);
+			case self::JSON:
+				return static::castJson($value);
 		}
 		return $value;
 	}
@@ -196,8 +252,13 @@ class Column
 
 		if (array_key_exists($this->raw_type,self::$TYPE_MAPPING))
 			$this->type = self::$TYPE_MAPPING[$this->raw_type];
-		else
-			$this->type = self::STRING;
+		else {
+			if (str_ends_with($this->raw_type, '[]')) {
+				$this->type = self::ARRAY_STRING;
+			} else {
+				$this->type = self::STRING;
+			}
+		}
 
 		return $this->type;
 	}

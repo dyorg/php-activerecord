@@ -14,6 +14,9 @@ class PgsqlAdapter extends Connection
 	static $QUOTE_CHARACTER = '"';
 	static $DEFAULT_PORT = 5432;
 
+	const REPLACE_SCHEMA_ENABLED_MODE = true;
+	const REPLACE_SCHEMA_DISABLED_MODE = false;
+
     public $schema;
 
     public function __construct($info)
@@ -21,17 +24,25 @@ class PgsqlAdapter extends Connection
         if (!empty($info->schema)) {
             $this->schema = $info->schema;
         }
+
         parent::__construct($info);
+
+		if (!empty($info->rls_account_id)) {
+			$this->set_session_variable('app.rls_account_id', $info->rls_account_id);
+		}
     }
 
-    public function query($sql, &$values=array())
+    public function query($sql, &$values=array(), $replaceSchema = self::REPLACE_SCHEMA_ENABLED_MODE)
     {
-        if (!empty($this->schema)) {
+        if (!empty($this->schema) && $replaceSchema) {
 
         	$joinLateralReplaceCount = 0;
-			$sql = preg_replace('/(join lateral)/', "#lateral# join", $sql,-1, $joinLateralReplaceCount);
+			$sql = preg_replace('/(join lateral)/i', "#lateral# join", $sql,-1, $joinLateralReplaceCount);
 
-        	$regex = '/(from|update|join)\s+([^\(_"]\w+[^\w\(\.])/i';
+			// add schema before table when FROM, UPDATE, JOIN, INSERT INTO clausules
+			// dont add schema when already has "schamename.tablename"
+        	$regex = '/(from|update|join|insert\s+into)\s+([^\(_"]\w+[^\w\(\.])/i';
+			$sql .= ' '; // add space at end to force match when no clausules after table_name
             $sql = preg_replace($regex, "$1 {$this->schema}.$2", $sql);
 
             if ($joinLateralReplaceCount > 0) {
@@ -133,6 +144,11 @@ class PgsqlAdapter extends Connection
 			$c->raw_type = 'date';
 			$c->length = 10;
 		}
+		elseif (str_ends_with($column['type'], '[]'))
+		{
+			// use array as raw_type to skip casting
+			$c->raw_type = $column['type'];
+		}
 		else
 		{
 			preg_match('/^([A-Za-z0-9_]+)(\(([0-9]+(,[0-9]+)?)\))?/',$column['type'],$matches);
@@ -161,6 +177,11 @@ class PgsqlAdapter extends Connection
 	public function set_encoding($charset)
 	{
 		parent::query("SET NAMES '$charset'");
+	}
+
+	public function set_session_variable($variable, $value)
+	{
+		parent::query("SET $variable = '$value'");
 	}
 
 	public function native_database_types()
